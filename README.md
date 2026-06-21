@@ -115,6 +115,31 @@ jobs:
 
 Violations appear inline on pull requests under the **Security** tab.
 
+## Pull request comments
+
+On `pull_request` events the action posts a single quality-score comment and updates it
+in place on every push — no comment spam. Give the job permission to write PR comments:
+
+```yaml
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: markslilley/perf-lint-action@v1
+        with:
+          paths: tests/performance/
+          min_score: '60'   # also fail the PR if the score drops below 60
+```
+
+The comment shows the overall grade/score, the violation count, and — when there are
+higher-tier issues — how many are hidden. Set `pr_comment: 'false'` to disable it.
+
 ---
 
 ## Inputs
@@ -129,6 +154,9 @@ Violations appear inline on pull requests under the **Security** tab.
 | `ignore_rule` | No | — | Comma-separated rule IDs to ignore (e.g. `JMX001,K6003`) |
 | `upload_sarif` | No | `false` | Upload SARIF to GitHub Code Scanning |
 | `fail_on_violations` | No | `true` | Fail the step when violations are found |
+| `min_score` | No | — | Fail when the overall quality score is below this (0–100) |
+| `pr_comment` | No | `true` | On PRs, post/update a score comment (needs `pull-requests: write`) |
+| `github_token` | No | `${{ github.token }}` | Token used to post the PR comment |
 | `api_key` | No | — | perf-lint API key — store as a repository secret |
 
 ## Outputs

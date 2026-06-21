@@ -2,6 +2,21 @@
 
 All notable changes to the perf-lint GitHub Action are documented here.
 
+## [1.2.0] — 2026-06-21
+
+### Added
+- **Automated PR comments.** On `pull_request` events the action posts a single
+  quality-score comment (grade, score, violation count, hidden higher-tier count) and
+  updates it in place on subsequent pushes. Controlled by `pr_comment` (default `true`)
+  and `github_token`; requires `permissions: pull-requests: write`. Best-effort — a
+  missing permission logs a hint and never fails the build.
+- **`min_score` quality gate.** Fail the workflow when the overall quality score drops
+  below a threshold (0–100), independent of the violation-based gate.
+
+### Changed
+- Failure is now enforced in a final step, so the PR comment and SARIF upload still run
+  when a gate trips (the comment posts precisely when the build is red).
+
 ## [1.1.0] — 2026-06-21
 
 ### Added

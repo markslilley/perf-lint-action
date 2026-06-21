@@ -71,6 +71,28 @@ inputs:
     required: false
     default: ''
 
+  min_score:
+    description: >
+      Fail the workflow when the overall quality score (0-100) is below
+      this threshold. Leave empty to disable the score gate.
+    required: false
+    default: ''
+
+  pr_comment:
+    description: >
+      On pull_request events, post (and update) a comment with the quality
+      score. Requires `permissions: pull-requests: write`. Set to "false"
+      to disable.
+    required: false
+    default: 'true'
+
+  github_token:
+    description: >
+      Token used to post the PR comment. Defaults to the automatic
+      workflow token; override only if you need a different identity.
+    required: false
+    default: ${{ github.token }}
+
 outputs:
   violations:
     description: Total number of free-tier violations found across all files.
@@ -158,6 +180,7 @@ runs:
         HINT=$(printf '%s\n' "$OUTPUT" | grep -oE '[0-9]+ violations? hidden \([^)]*\)' | head -1)
         HIDDEN=$(printf '%s' "$HINT" | grep -oE '^[0-9]+')
         set -e
+        TIERS=""
         if [ -n "$HIDDEN" ] && [ "$HIDDEN" -gt 0 ] 2>/dev/null; then
           TIERS=$(printf '%s' "$HINT" | sed -E 's/.*\(([^)]*)\).*/\1/')
           LINK="https://perflint.martkos-it.co.uk/?utm_source=github-action&utm_medium=ci&utm_campaign=upgrade-prompt"
@@ -177,14 +200,94 @@ runs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
         fi
+        echo "hidden=${HIDDEN:-0}" >> "$GITHUB_OUTPUT"
+        echo "tiers=$TIERS"        >> "$GITHUB_OUTPUT"
 
-        if [ "${{ inputs.fail_on_violations }}" = "true" ]; then
-          exit $EXIT_CODE
+        # ── Quality gates ────────────────────────────────────────────────
+        # Defer failure to the final "Enforce result" step so the PR comment
+        # and SARIF upload still run when a gate trips.
+        SHOULD_FAIL=0
+        if [ "${{ inputs.fail_on_violations }}" = "true" ] && [ "$EXIT_CODE" -ne 0 ]; then
+          SHOULD_FAIL=1
         fi
+        if [ -n "${{ inputs.min_score }}" ] && [ "$SCORE" -lt "${{ inputs.min_score }}" ] 2>/dev/null; then
+          echo "::error title=perf-lint::Quality score $SCORE is below the required min_score of ${{ inputs.min_score }}"
+          SHOULD_FAIL=1
+        fi
+        echo "should_fail=$SHOULD_FAIL" >> "$GITHUB_OUTPUT"
+
+    - name: Comment on pull request
+      if: always() && github.event_name == 'pull_request' && inputs.pr_comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        PR_NUM: ${{ github.event.pull_request.number }}
+        C_SCORE: ${{ steps.run.outputs.score }}
+        C_GRADE: ${{ steps.run.outputs.grade }}
+        C_VIOL: ${{ steps.run.outputs.violations }}
+        C_HIDDEN: ${{ steps.run.outputs.hidden }}
+        C_TIERS: ${{ steps.run.outputs.tiers }}
+        C_FAIL: ${{ steps.run.outputs.should_fail }}
+        HAS_KEY: ${{ inputs.api_key != '' }}
+      run: |
+        python3 - <<'PYEOF'
+        import json, os, urllib.request, urllib.error
+        tok = os.environ.get("GH_TOKEN", "")
+        repo = os.environ.get("REPO", "")
+        pr = os.environ.get("PR_NUM", "")
+        if not (tok and repo and pr):
+            print("perf-lint: missing token/repo/PR — skipping comment"); raise SystemExit(0)
+        MARK = "<!-- perf-lint-action -->"
+        score = os.environ.get("C_SCORE", "?"); grade = os.environ.get("C_GRADE", "?")
+        viol = os.environ.get("C_VIOL", "0"); hidden = (os.environ.get("C_HIDDEN", "") or "0").strip()
+        tiers = os.environ.get("C_TIERS", ""); failed = os.environ.get("C_FAIL", "0") == "1"
+        has_key = os.environ.get("HAS_KEY", "") == "true"
+        link = "https://perflint.martkos-it.co.uk/?utm_source=github-pr&utm_medium=ci&utm_campaign=upgrade-prompt"
+        head = "❌" if failed else "✅"
+        body = [MARK,
+                f"### {head} perf-lint — quality score `{grade} {score}/100`",
+                "",
+                f"**{viol}** free-tier violation(s) found across the linted scripts."]
+        if hidden and hidden != "0":
+            cta = "see them in your dashboard" if has_key else "unlock them with perf-lint Pro"
+            body.append("")
+            body.append(f"> **{hidden}** higher-tier ({tiers}) issue(s) are hidden on the free tier — [{cta}]({link}).")
+        body.append("")
+        body.append("<sub>Posted by [perf-lint-action](https://github.com/markslilley/perf-lint-action) · scripts never leave your runner.</sub>")
+        body = "\n".join(body)
+
+        api = f"https://api.github.com/repos/{repo}/issues/{pr}/comments"
+        hdr = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "perf-lint-action"}
+        def call(url, method="GET", payload=None):
+            data = json.dumps(payload).encode() if payload is not None else None
+            req = urllib.request.Request(url, data=data, headers=hdr, method=method)
+            return urllib.request.urlopen(req)
+        existing = None
+        try:
+            for c in json.load(call(api + "?per_page=100")):
+                if MARK in (c.get("body") or ""):
+                    existing = c["id"]; break
+        except Exception as e:
+            print("perf-lint: could not list comments:", e)
+        try:
+            if existing:
+                call(f"https://api.github.com/repos/{repo}/issues/comments/{existing}", "PATCH", {"body": body})
+                print("perf-lint: updated PR comment")
+            else:
+                call(api, "POST", {"body": body})
+                print("perf-lint: posted PR comment")
+        except urllib.error.HTTPError as e:
+            print(f"perf-lint: could not post comment (HTTP {e.code}). "
+                  "Add `permissions: pull-requests: write` to the job.")
+        except Exception as e:
+            print("perf-lint: could not post comment:", e)
+        PYEOF
 
     - name: Generate SARIF report
       id: sarif
-      if: inputs.upload_sarif == 'true'
+      if: always() && inputs.upload_sarif == 'true'
       shell: bash
       env:
         PERF_LINT_API_KEY: ${{ inputs.api_key }}
@@ -195,8 +298,17 @@ runs:
         echo "sarif_file=$SARIF_FILE" >> "$GITHUB_OUTPUT"
 
     - name: Upload SARIF to GitHub Code Scanning
-      if: inputs.upload_sarif == 'true' && steps.sarif.outputs.sarif_file != ''
+      if: always() && inputs.upload_sarif == 'true' && steps.sarif.outputs.sarif_file != ''
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.sarif.outputs.sarif_file }}
         category: perf-lint
+
+    - name: Enforce result
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.run.outputs.should_fail }}" = "1" ]; then
+          echo "perf-lint: failing the workflow (violations and/or score gate)."
+          exit 1
+        fi
