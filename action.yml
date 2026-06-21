@@ -148,6 +148,36 @@ runs:
         echo "score=$SCORE"           >> "$GITHUB_OUTPUT"
         echo "grade=$GRADE"           >> "$GITHUB_OUTPUT"
 
+        # ── Pro/Team upgrade touchpoint ──────────────────────────────────
+        # perf-lint counts higher-tier (Pro/Team) violations but only shows
+        # free-tier ones, printing a "N violations hidden (...)" hint. Re-surface
+        # that real number as a native GitHub annotation + job summary so the
+        # upgrade path is visible without scrolling the raw log. Best-effort:
+        # never fails the step.
+        set +e
+        HINT=$(printf '%s\n' "$OUTPUT" | grep -oE '[0-9]+ violations? hidden \([^)]*\)' | head -1)
+        HIDDEN=$(printf '%s' "$HINT" | grep -oE '^[0-9]+')
+        set -e
+        if [ -n "$HIDDEN" ] && [ "$HIDDEN" -gt 0 ] 2>/dev/null; then
+          TIERS=$(printf '%s' "$HINT" | sed -E 's/.*\(([^)]*)\).*/\1/')
+          LINK="https://perflint.martkos-it.co.uk/?utm_source=github-action&utm_medium=ci&utm_campaign=upgrade-prompt"
+          if [ -n "$PERF_LINT_API_KEY" ]; then
+            CTA="Full $TIERS results are in your dashboard"
+          else
+            CTA="See every issue and unlock auto-fixes with perf-lint Pro"
+          fi
+          echo "::notice title=perf-lint Pro::$HIDDEN higher-tier ($TIERS) issue(s) hidden on the free tier. $CTA — $LINK"
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            {
+              echo "### perf-lint — $HIDDEN higher-tier ($TIERS) issue(s) hidden"
+              echo ""
+              echo "Your performance scripts have **$HIDDEN** issue(s) that the free tier counts but does not display."
+              echo ""
+              echo "[$CTA →]($LINK)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+
         if [ "${{ inputs.fail_on_violations }}" = "true" ]; then
           exit $EXIT_CODE
         fi

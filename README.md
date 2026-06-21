@@ -156,6 +156,11 @@ are counted and hinted at; the full picture is visible in your dashboard.
 
 See [perflint.martkos-it.co.uk](https://perflint.martkos-it.co.uk) for Pro and Team plans.
 
+When higher-tier violations are present, the action adds a short summary to the run's
+**job summary** (and a notice annotation) telling you how many Pro/Team issues are hidden —
+so you can see what you're missing without leaving GitHub. It never fails the build and
+stays silent when there's nothing hidden.
+
 ## Examples
 
 ### Fail only on errors

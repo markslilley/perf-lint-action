@@ -2,6 +2,15 @@
 
 All notable changes to the perf-lint GitHub Action are documented here.
 
+## [1.1.0] — 2026-06-21
+
+### Added
+- In-CI Pro/Team upgrade prompt. When perf-lint reports higher-tier violations
+  that the free tier hides, the action now re-surfaces that count as a native
+  GitHub `::notice::` annotation and a job-summary block linking to
+  perflint.martkos-it.co.uk (UTM-tagged for click attribution). Best-effort —
+  never fails the step, and stays silent when there are no hidden violations.
+
 ## [1.0.1] — 2026-02-28
 
 ### Fixed
