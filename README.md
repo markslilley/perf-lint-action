@@ -1,11 +1,45 @@
 # perf-lint action
 
-> Static analysis for performance test scripts — in your CI pipeline.
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-perf--lint-2ea44f?logo=github)](https://github.com/marketplace/actions/perf-lint)
+[![Release](https://img.shields.io/github/v/release/markslilley/perf-lint-action?sort=semver&logo=github)](https://github.com/markslilley/perf-lint-action/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Rules](https://img.shields.io/badge/rules-53-orange)
+![Tools](https://img.shields.io/badge/JMeter%20%C2%B7%20k6%20%C2%B7%20Gatling-supported-blueviolet)
 
-Runs [perf-lint](https://github.com/markslilley/perf-lint) against JMeter `.jmx`,
-k6 `.js`/`.ts`, and Gatling `.scala`/`.kt` files. Catches missing think times,
-hardcoded values, absent assertions, unrealistic ramp patterns, and 15+ other
-quality issues before they reach your load environment.
+> **The only dedicated linter for performance test scripts** — JMeter, k6, and Gatling —
+> as a GitHub Action. Catch quality issues in your load tests *before* they reach the
+> load environment, right inside CI.
+
+Most teams lint their application code and never lint the load tests that decide whether
+that code ships. A test with no think times, no assertions, or hardcoded data produces
+confident-looking numbers that are quietly wrong. `perf-lint` is static analysis for the
+test scripts themselves — **53 rules** across JMeter `.jmx`, k6 `.js`/`.ts`, and Gatling
+`.scala`/`.kt`, running on every push and pull request.
+
+Scripts never leave your runner. All rules run locally; nothing is uploaded unless you
+opt in to the dashboard.
+
+---
+
+## What it catches
+
+```text
+$ perf-lint check tests/k6/ecommerce.js
+
+  ecommerce.js (k6)  [C 70/100]
+
+  W [K6001] MissingThinkTime    — No sleep() calls found. (line 1)             [fixable]
+  W [K6004] MissingThresholds   — No thresholds defined in options. (line 1)   [fixable]
+  W [K6007] MissingTeardown     — setup() exported but no teardown(). (line 3) [fixable]
+
+  Violations    3  (0 errors, 3 warnings)
+  Quality score C  70/100
+```
+
+Missing think times, absent thresholds/assertions, hardcoded values, missing cache/cookie
+managers, unrealistic ramp patterns, correlation gaps, and 45+ more — each with a rule ID,
+severity, and (where possible) an auto-fix. Every file gets a 0–100 quality score and an
+A–F grade you can use as a CI gate.
 
 ---
 
@@ -28,6 +62,23 @@ jobs:
           paths: tests/performance/
 ```
 
+That's the whole setup. The step fails when warnings or errors are found; set
+`fail_on_violations: 'false'` to report without blocking while you adopt it.
+
+> ⭐ If this saves you a bad load test, **star the repo** — it helps other teams find it.
+
+## Why perf-lint
+
+- **Tool-agnostic** — one linter for JMeter, k6, *and* Gatling. No lock-in.
+- **Private by default** — all 53 rules run on your runner; scripts are never uploaded.
+- **Auto-fixable** — many rules insert the missing manager/threshold/think-time for you.
+- **CI-native** — quality score as a gate, SARIF into the Security tab, step outputs for
+  downstream jobs.
+- **The only one of its kind** — no other dedicated linter covers performance test scripts
+  across all three major tools.
+
+---
+
 ## With dashboard (Pro / Team violations)
 
 ```yaml
@@ -37,9 +88,10 @@ jobs:
     api_key: ${{ secrets.PERF_LINT_API_KEY }}
 ```
 
-Get your API key at [perflint.martkos-it.co.uk](https://perflint.martkos-it.co.uk).
-Full results (all tiers) are sent silently to your dashboard — the CLI output
-always shows only free-tier violations.
+The terminal always shows the **18 free-tier rules**. Pro and Team violations are counted
+and hinted at; the full breakdown appears in your dashboard. Get an API key at
+[perflint.martkos-it.co.uk](https://perflint.martkos-it.co.uk) and store it as a repository
+secret — `secrets.PERF_LINT_API_KEY`.
 
 ## With GitHub Code Scanning (SARIF)
 
@@ -102,6 +154,8 @@ are counted and hinted at; the full picture is visible in your dashboard.
 | Pro | 22 | All ERRORs + production-critical warnings |
 | Team | 13 | Advanced patterns: correlation, memory, architecture |
 
+See [perflint.martkos-it.co.uk](https://perflint.martkos-it.co.uk) for Pro and Team plans.
+
 ## Examples
 
 ### Fail only on errors
@@ -158,6 +212,14 @@ are counted and hinted at; the full picture is visible in your dashboard.
 | SARIF upload | `security-events: write` |
 
 ---
+
+## Part of the Martkos performance-testing ecosystem
+
+perf-lint is the script-quality layer of a full performance-testing toolchain — data
+generation, scripting, execution, migration, and reporting across JMeter, k6, and Gatling.
+See [martkos-it.co.uk](https://martkos-it.co.uk) and the core CLI at
+[markslilley/perf-lint](https://github.com/markslilley/perf-lint)
+(`pip install perf-lint-tool`).
 
 ## License
 
